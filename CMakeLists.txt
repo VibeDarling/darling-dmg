@@ -1,6 +1,6 @@
-project(darling-dmg)
-
 cmake_minimum_required(VERSION 3.13)
+
+project(darling-dmg CXX)
 
 set(dmg_sources
 	src/unichar.cpp
@@ -41,7 +41,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
 	"${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 
 add_definitions(-D_FILE_OFFSET_BITS=64)
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -ggdb -O0")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ggdb -O0")
 
 include(FindLibXml2)
 
@@ -96,6 +96,7 @@ add_library(dmg SHARED
 
 	src/HFSHighLevelVolume.cpp
 )
+target_compile_features(dmg PRIVATE cxx_std_11)
 target_link_libraries(dmg -licuuc -lcrypto -lz -lbz2 ${LIBXML2_LIBRARY})
 install(TARGETS dmg DESTINATION lib)
 
