@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <getopt.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include "DMGExtractor.h"
 #include "DMGDisk.h"
 #include "FileReader.h"
@@ -355,8 +356,10 @@ extern "C"
 
 static int doDetach(int argc, char** argv)
 {
+#ifndef DARLING_DMG_NO_FUSE
 	pid_t pid;
 	int (*elf_posix_spawnp)(pid_t* pid, const char* path, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]);
+#endif
 
 	if (argc < 3)
 		printHelp();
