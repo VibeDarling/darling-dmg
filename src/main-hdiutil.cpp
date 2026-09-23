@@ -4,28 +4,35 @@
 #include <errno.h>
 #include <unistd.h>
 #include <cstdlib>
-#include <elfcalls.h>
-#include <sys/wait.h>
-#include <spawn.h>
 #include <getopt.h>
 #include <fcntl.h>
 #include "DMGExtractor.h"
+#include "DMGDisk.h"
+#include "FileReader.h"
+
+#ifndef DARLING_DMG_NO_FUSE
+#include <elfcalls.h>
+#include <sys/wait.h>
+#include <spawn.h>
+#endif
 
 static void printMount();
 
+#ifndef DARLING_DMG_NO_FUSE
 #define main main_fuse
 #define BEFORE_MOUNT_EXTRA printMount(); daemon(false, false)
 #include "main-fuse.cpp"
 #undef main
+#endif
 
 static void printHelp();
-static void doFork(void);
 static int doAttach(int argc, char** argv);
 static int doDetach(int argc, char** argv);
 static int doImageInfo(int argc, char** argv);
+#ifndef DARLING_DMG_NO_FUSE
 static void addFusermountIntoPath();
-
 extern "C" int __darling_vchroot_expand(const char* path, char* out);
+#endif
 
 int main(int argc, char** argv)
 {
@@ -211,7 +218,12 @@ static int doAttach(int argc, char** argv)
 	// Containers without /dev/fuse can still install read-only HFS+ casks.
 	// The extracted tree has the same guest-visible path Homebrew expects from
 	// attach, while a sibling marker lets detach distinguish it from FUSE mounts.
-	if (access("/Volumes/SystemRoot/dev/fuse", F_OK) != 0) {
+#ifdef DARLING_DMG_NO_FUSE
+	const bool extractInsteadOfMount = true;
+#else
+	const bool extractInsteadOfMount = access("/Volumes/SystemRoot/dev/fuse", F_OK) != 0;
+#endif
+	if (extractInsteadOfMount) {
 		try {
 			extractDMG(dmg, mount);
 			std::string marker = mount + ".darling-dmg-extracted";
@@ -229,6 +241,7 @@ static int doAttach(int argc, char** argv)
 		}
 	}
 
+#ifndef DARLING_DMG_NO_FUSE
 	fd = mkstemp(output);
 
 	// redirect stderr into temp file
@@ -278,6 +291,9 @@ static int doAttach(int argc, char** argv)
 	unlink(output);
 
 	return 0;
+#else
+	return 1; // The extraction branch above always returns first.
+#endif
 }
 
 static void printMount()
@@ -328,11 +344,13 @@ static void printMount()
 	}
 }
 
+#ifndef DARLING_DMG_NO_FUSE
 extern "C"
 {
 	extern const struct elf_calls* _elfcalls;
 	extern char **environ;
 }
+#endif
 
 
 static int doDetach(int argc, char** argv)
@@ -366,11 +384,15 @@ static int doDetach(int argc, char** argv)
 		}
 	}
 
-	addFusermountIntoPath();
 	std::string marker = std::string(argv[optind]) + ".darling-dmg-extracted";
 	if (unlink(marker.c_str()) == 0)
 		return 0;
 
+#ifdef DARLING_DMG_NO_FUSE
+	std::cerr << "Not an extracted disk image: " << argv[optind] << std::endl;
+	return 1;
+#else
+	addFusermountIntoPath();
 	char linux_path[4096];
 	__darling_vchroot_expand(argv[optind], linux_path);
 	const char* pargv[] = { "fusermount", "-u", linux_path, nullptr };
@@ -389,8 +411,10 @@ static int doDetach(int argc, char** argv)
 
 		return 0;
 	}
+#endif
 }
 
+#ifndef DARLING_DMG_NO_FUSE
 void addFusermountIntoPath()
 {
 	std::string path = getenv("PATH");
@@ -407,3 +431,4 @@ void addFusermountIntoPath()
 	*((void**)(&elf_setenv)) = _elfcalls->dlsym_fatal(nullptr, "setenv");
 	elf_setenv("PATH", path.c_str(), true);
 }
+#endif
