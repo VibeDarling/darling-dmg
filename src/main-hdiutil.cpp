@@ -8,6 +8,8 @@
 #include <sys/wait.h>
 #include <spawn.h>
 #include <getopt.h>
+#include <fcntl.h>
+#include "DMGExtractor.h"
 
 static void printMount();
 
@@ -20,6 +22,7 @@ static void printHelp();
 static void doFork(void);
 static int doAttach(int argc, char** argv);
 static int doDetach(int argc, char** argv);
+static int doImageInfo(int argc, char** argv);
 static void addFusermountIntoPath();
 
 extern "C" int __darling_vchroot_expand(const char* path, char* out);
@@ -33,6 +36,8 @@ int main(int argc, char** argv)
 		return doAttach(argc, argv);
 	else if (strcmp(argv[1], "detach") == 0)
 		return doDetach(argc, argv);
+	else if (strcmp(argv[1], "imageinfo") == 0)
+		return doImageInfo(argc, argv);
 
 	printHelp();
 	return 1;
@@ -46,6 +51,8 @@ static void printHelp()
 		"\t\tMounts a .dmg file <file> and prints the mount locaton\n"
 		"\tdetach [options] <mount-path>\n"
 		"\t\tUnmounts a .dmg file mounted at <mount-path>\n";
+	std::cerr << "\timageinfo -format <file>\n"
+		"\t\tReports the format of a supported disk image\n";
 
 	exit(1);
 }
@@ -53,6 +60,24 @@ static void printHelp()
 static std::string g_mountDir;
 static bool puppetstrings = false;
 static bool plist = false;
+
+static int doImageInfo(int argc, char** argv)
+{
+	if (argc != 4 || strcmp(argv[2], "-format") != 0)
+		printHelp();
+	try {
+		auto reader = std::make_shared<FileReader>(argv[3]);
+		if (!DMGDisk::isDMG(reader)) {
+			std::cerr << "Unsupported disk image format\n";
+			return 1;
+		}
+		std::cout << "UDIF\n";
+		return 0;
+	} catch (const std::exception& error) {
+		std::cerr << error.what() << std::endl;
+		return 1;
+	}
+}
 
 static int doAttach(int argc, char** argv)
 {
@@ -182,6 +207,27 @@ static int doAttach(int argc, char** argv)
 		return 1;
 	}
 	g_mountDir = mount;
+
+	// Containers without /dev/fuse can still install read-only HFS+ casks.
+	// The extracted tree has the same guest-visible path Homebrew expects from
+	// attach, while a sibling marker lets detach distinguish it from FUSE mounts.
+	if (access("/Volumes/SystemRoot/dev/fuse", F_OK) != 0) {
+		try {
+			extractDMG(dmg, mount);
+			std::string marker = mount + ".darling-dmg-extracted";
+			int markerFD = open(marker.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
+			if (markerFD < 0) {
+				std::cerr << "Cannot record extracted image mount: " << strerror(errno) << std::endl;
+				return 1;
+			}
+			close(markerFD);
+			printMount();
+			return 0;
+		} catch (const std::exception& error) {
+			std::cerr << "Cannot extract disk image: " << error.what() << std::endl;
+			return 1;
+		}
+	}
 
 	fd = mkstemp(output);
 
@@ -321,6 +367,9 @@ static int doDetach(int argc, char** argv)
 	}
 
 	addFusermountIntoPath();
+	std::string marker = std::string(argv[optind]) + ".darling-dmg-extracted";
+	if (unlink(marker.c_str()) == 0)
+		return 0;
 
 	char linux_path[4096];
 	__darling_vchroot_expand(argv[optind], linux_path);

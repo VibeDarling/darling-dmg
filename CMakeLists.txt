@@ -111,6 +111,11 @@ SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 target_link_libraries(darling-dmg -lfuse dmg)
 install(TARGETS darling-dmg RUNTIME DESTINATION bin)
 
+add_executable(darling-dmg-extract src/main-extract.cpp src/DMGExtractor.cpp)
+target_compile_features(darling-dmg-extract PRIVATE cxx_std_11)
+target_link_libraries(darling-dmg-extract dmg)
+install(TARGETS darling-dmg-extract RUNTIME DESTINATION bin)
+
 # This is used in Darling build.
 else (NOT DARLING)
 	include(wrap_elf)
@@ -131,6 +136,7 @@ else (NOT DARLING)
 
 	add_darling_executable(hdiutil
 		${dmg_sources}
+		src/DMGExtractor.cpp
 		src/main-hdiutil.cpp
 	)
 
